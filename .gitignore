@@ -1,0 +1,9 @@
+node_modules/
+prior_auth.db
+prior_auth.db-shm
+prior_auth.db-wal
+frontend/build/
+.env
+.env.local
+*.log
+.DS_Store

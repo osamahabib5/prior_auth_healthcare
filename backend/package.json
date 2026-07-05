@@ -1,0 +1,17 @@
+{
+  "name": "prior-auth-backend",
+  "version": "1.0.0",
+  "description": "Prior Authorization Assistant - Backend API",
+  "main": "api/patients.js",
+  "scripts": {
+    "seed": "node seed.js",
+    "start": "node api/patients.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.0",
+    "better-sqlite3": "^11.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
+    "express": "^4.21.0"
+  }
+}
