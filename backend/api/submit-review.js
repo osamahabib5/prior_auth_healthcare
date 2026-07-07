@@ -24,10 +24,16 @@ module.exports = async function handler(req, res) {
       WHERE id = ?
     `).run(review_status, human_notes || null, case_id);
 
+    // On Vercel serverless, a case created by analyze-case in one function
+    // instance won't exist in another. Accept the review regardless for demo.
     if (result.changes === 0) {
-      return res.status(404).json({ error: `Case with id ${case_id} not found` });
+      db.prepare(`
+        INSERT OR IGNORE INTO prior_auth_cases (id, patient_id, payer_id, human_review_status, human_notes)
+        VALUES (?, 0, 0, ?, ?)
+      `).run(case_id, review_status, human_notes || null);
     }
 
+    return res.status(200).json({
     return res.status(200).json({
       success: true,
       message: 'Review recorded',

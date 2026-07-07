@@ -1,25 +1,10 @@
 const Database = require('better-sqlite3');
 const path = require('path');
-const fs = require('fs');
 
-const isVercel = !!process.env.VERCEL;
-
-// On Vercel, the filesystem is read-only except /tmp/.
-// We copy the seeded DB to /tmp/ so it can be opened for reads.
-// (Writes won't persist across invocations — this is a known serverless limitation.)
-let DB_PATH;
-if (process.env.DATABASE_PATH) {
-  DB_PATH = process.env.DATABASE_PATH;
-} else if (isVercel) {
-  DB_PATH = '/tmp/prior_auth.db';
-  // Copy the pre-seeded database from the deployment bundle to /tmp/
-  const sourcePath = path.join(__dirname, '..', 'prior_auth.db');
-  if (!fs.existsSync(DB_PATH) && fs.existsSync(sourcePath)) {
-    fs.copyFileSync(sourcePath, DB_PATH);
-  }
-} else {
-  DB_PATH = path.join(__dirname, '..', 'prior_auth.db');
-}
+// On Vercel, use /tmp/ (the only writable directory).
+// Locally, use the project root.
+const DB_PATH = process.env.DATABASE_PATH ||
+  (process.env.VERCEL ? '/tmp/prior_auth.db' : path.join(__dirname, '..', 'prior_auth.db'));
 
 let db;
 
@@ -29,8 +14,31 @@ function getDb() {
     db.pragma('journal_mode = WAL');
     db.pragma('foreign_keys = ON');
     initSchema();
+    autoSeed();
   }
   return db;
+}
+
+function autoSeed() {
+  // Seed the database if it's empty (needed on Vercel where the .db file isn't deployed)
+  const count = db.prepare('SELECT COUNT(*) as c FROM patients').get();
+  if (count.c === 0) {
+    const { patients, policy } = require('./seed-data');
+    const insertPatient = db.prepare(
+      'INSERT INTO patients (name, age, diagnosis, requested_procedure, clinical_notes) VALUES (?, ?, ?, ?, ?)'
+    );
+    const insertPolicy = db.prepare(
+      'INSERT INTO policies (payer_name, policy_text, coverage_rules) VALUES (?, ?, ?)'
+    );
+    const seedAll = db.transaction(() => {
+      insertPolicy.run(policy.payer_name, policy.policy_text, policy.coverage_rules);
+      for (const p of patients) {
+        insertPatient.run(p.name, p.age, p.diagnosis, p.procedure, p.notes);
+      }
+    });
+    seedAll();
+    console.log('[db] Auto-seeded database with', patients.length, 'patients + 1 policy');
+  }
 }
 
 function initSchema() {
