@@ -1,0 +1,16 @@
+{
+  "name": "prior-auth-assistant",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Prior Authorization Assistant - AI-powered prior auth workflow",
+  "scripts": {
+    "build": "cd frontend && npm install && npm run build",
+    "seed": "cd backend && node seed.js",
+    "dev": "cd backend && node server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "axios": "^1.7.0",
+    "dotenv": "^16.4.0"
+  }
+}
