@@ -1,10 +1,10 @@
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
-const axios = require('axios');
+const { createProvider } = require('./llm-provider');
 
-const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || '';
-const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1';
-const MODEL = 'deepseek-chat';
+// ── LLM Provider (selected via LLM_PROVIDER env var; defaults to deepseek) ──
+const provider = createProvider();
+
 const TEMPERATURE = 0.3;
 const MAX_TOKENS = 2000;
 
@@ -407,7 +407,7 @@ Respectfully submitted,
 [Contact Information]`;
 }
 
-// ── DeepSeek Agent Loop ──────────────────────────────────────────────
+// ── LLM Agent Loop (provider-agnostic) ────────────────────────────────
 
 const SYSTEM_PROMPT = `You are a healthcare administrative assistant evaluating prior authorization requests.
 
@@ -547,24 +547,13 @@ Please evaluate this case step by step using the available tools.`
     iteration++;
 
     try {
-      const response = await axios.post(
-        `${DEEPSEEK_BASE_URL}/chat/completions`,
-        {
-          model: MODEL,
-          messages,
-          tools: TOOLS,
-          temperature: TEMPERATURE,
-          max_tokens: MAX_TOKENS
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
-            'Content-Type': 'application/json'
-          }
-        }
+      const response = await provider.chatCompletion(
+        messages,
+        TOOLS,
+        { temperature: TEMPERATURE, maxTokens: MAX_TOKENS }
       );
 
-      const choice = response.data.choices[0];
+      const choice = response;
       const assistantMessage = choice.message;
 
       // Add assistant message to history
@@ -635,7 +624,7 @@ Please evaluate this case step by step using the available tools.`
     }
   }
 
-  // Fallback: if agent didn't produce a final result, use local-only processing
+  // Fallback: if LLM didn't produce a final result, use local-only processing
   return fallbackLocalAnalysis(patient, policy, agentTrace);
 }
 

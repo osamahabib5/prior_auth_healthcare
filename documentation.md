@@ -1,128 +1,328 @@
-# Prior Authorization Assistant — User Guide
+# Prior Authorization Assistant — Technical Documentation
 
-## What this application does
-
-This tool helps healthcare staff evaluate prior authorization requests faster and more consistently. You select a patient case, click a button, and an AI assistant reviews it against the payer's coverage policy. It tells you whether the request meets the criteria, what documentation is missing (if anything), and can even draft the authorization letter for you.
-
-## The problem it solves
-
-Prior authorization is one of the most time-consuming administrative tasks in healthcare. Staff must manually compare each patient's clinical notes against dense payer policy documents to determine if a requested procedure is covered. This application automates that comparison, so you can focus on the cases that need human judgment.
+This document covers the technical architecture, database schema, API specifications, agent design, LLM provider abstraction, and deployment configuration. For a non-technical overview, see [README.md](README.md).
 
 ---
 
-## How to use it
+## Architecture
 
-### Step 1: Open the dashboard
+```
+Frontend (React 18)  →  Backend (Express API)  →  LLM Provider
+                                               →  SQLite Database
+```
 
-When you open the app, you'll see a **Home page** with a table of all patient cases. Each row shows:
-- Patient name and age
-- Their diagnosis
-- The procedure being requested
-- Current status (Pending, Approved, Missing Info, etc.)
-
-The top of the page shows summary stats: total cases, how many have been analyzed, and how many have been reviewed.
-
-### Step 2: Click "Analyze" on any case
-
-Click the blue **Analyze** button next to any patient. This takes you to the Case Analysis page, where you'll see the patient's full details — their diagnosis, the procedure requested, and their clinical notes.
-
-### Step 3: Run the analysis
-
-Click the green **Run Analysis** button. The AI assistant will:
-
-1. **Look up** the payer's coverage policy for that specific procedure
-2. **Check** whether the patient's clinical notes contain all the required documentation
-3. **Decide** whether the request should be approved, denied, or needs more information
-4. **Draft** a formal prior authorization letter if the request is approved
-
-This usually takes 5-15 seconds. You'll see a spinner while it works.
-
-### Step 4: Review the results
-
-Once complete, you'll see:
-
-- **Outcome badge** — A colored label showing Approved (green), Missing Information (yellow), or Denied (red)
-- **Reasoning** — A step-by-step explanation of why the AI made its decision
-- **Agent Trace** — Click to expand each step and see exactly what the AI looked at and found
-- **Drafted Letter** — If approved, a complete authorization letter ready to submit
-- **Missing Documentation** — If something is missing, a bullet list of exactly what's needed
-
-### Step 5: Human review (important!)
-
-The AI is an assistant, not the final decision-maker. At the bottom of the results, you'll find the **Human Review** section:
-
-- Select **Approve** if you agree with the AI's decision
-- Select **Reject** if you disagree (and optionally add notes explaining why)
-- Click **Submit Review**
-
-This records your decision and creates an audit trail.
-
-### Step 6: Check evaluation results
-
-The **Eval Results** page shows how accurate the AI has been across all cases. It compares the AI's decisions against ground-truth labels and shows:
-- Overall accuracy percentage
-- Which cases the AI got right vs. wrong
-- Detailed failure analysis for cases where the AI made a mistake
+- **Frontend**: React 18 single-page application with React Router
+- **Backend**: Node.js Express server; also deployable as Vercel serverless functions via `api/`
+- **LLM**: Multi-provider abstraction layer supporting DeepSeek, OpenAI, Anthropic Claude, and Groq
+- **Database**: SQLite via `better-sqlite3` (single file, zero-config)
 
 ---
 
-## What the AI can and cannot do
+## Project Structure
 
-### The AI CAN:
-- Compare clinical notes against specific policy criteria
-- Identify which required documentation is present or missing
-- Draft professional prior authorization letters
-- Explain its reasoning step by step
-
-### The AI CANNOT:
-- Make final authorization decisions (that's your job)
-- Access real patient records or EHR systems
-- Handle unusual or edge-case clinical scenarios perfectly
-- Replace clinical judgment about medical necessity
-
----
-
-## Understanding the status badges
-
-| Badge | Meaning |
-|-------|---------|
-| **Pending** | Case hasn't been analyzed yet |
-| **Approved** (green) | AI found all required documentation is present |
-| **Missing Info** (yellow) | AI found some required documentation is missing |
-| **Denied** (red) | AI determined the request doesn't meet coverage criteria |
-| **Reviewed ✓** (green) | A human reviewer approved the AI's decision |
-| **Reviewed ✗** (red) | A human reviewer rejected the AI's decision |
-
----
-
-## Current test data
-
-This demo includes **15 synthetic patient cases** (not real patients) covering a variety of common procedures:
-
-- MRI scans (spine, knee)
-- Diabetes devices (continuous glucose monitor)
-- Sleep apnea treatment (CPAP)
-- Migraine treatment (Botox)
-- Cardiac testing (stress echocardiogram)
-- Arthritis medication (Humira)
-- Eye surgery (cataract)
-- Knee surgery (ACL reconstruction)
-- Pain management (epidural steroid injection)
-- Joint replacement (knee arthroplasty)
-- Mental health treatment (TMS)
-- Gynecologic procedures (fibroid embolization, laparoscopy)
-- Sinus surgery
-
-All cases are evaluated against a single payer policy (BlueCross Insurance).
+```
+prior-auth-assistant/
+├── api/                          # Vercel serverless function entry points
+│   ├── patients.js               # GET  /api/patients
+│   ├── policies.js               # GET  /api/policies
+│   ├── analyze-case.js           # POST /api/analyze-case
+│   ├── submit-review.js          # POST /api/submit-review
+│   └── eval-results.js           # GET  /api/eval-results
+├── backend/
+│   ├── api/                      # Express route handlers (local dev)
+│   │   ├── patients.js
+│   │   ├── policies.js
+│   │   ├── analyze-case.js
+│   │   ├── submit-review.js
+│   │   └── eval-results.js
+│   ├── db.js                     # SQLite connection + schema initialization
+│   ├── seed.js                   # 15 synthetic patients + 1 payer policy
+│   ├── deepseek-agent.js         # Agent loop + 3 tools + local fallback
+│   ├── llm-provider.js           # Multi-LLM abstraction layer
+│   ├── server.js                 # Express dev server (port 3001)
+│   └── package.json
+├── frontend/
+│   ├── src/
+│   │   ├── pages/
+│   │   │   ├── Home.jsx
+│   │   │   ├── CaseAnalysis.jsx
+│   │   │   └── EvalResults.jsx
+│   │   ├── App.jsx
+│   │   ├── index.js
+│   │   └── index.css
+│   ├── public/index.html
+│   └── package.json
+├── .env                          # LLM_PROVIDER + API keys (not committed)
+├── vercel.json                   # Vercel deployment config
+├── prior_auth.db                 # SQLite database (committed, read-only on Vercel)
+├── README.md                     # End-user documentation
+└── documentation.md              # This file
+```
 
 ---
 
-## Privacy & security note
+## Database Schema
 
-This demo uses **synthetic (fake) patient data** — no real patient information is stored or processed. All data lives in a local database on your machine. In a production setting, the application would connect to your existing systems with proper security and compliance measures (HIPAA, etc.).
+### Table: patients
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | INTEGER PK | Auto-increment ID |
+| name | TEXT | Patient full name |
+| age | INTEGER | Patient age |
+| diagnosis | TEXT | Primary diagnosis |
+| requested_procedure | TEXT | Procedure being requested |
+| clinical_notes | TEXT | Full clinical notes |
+| created_at | DATETIME | Timestamp |
+
+### Table: policies
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | INTEGER PK | Auto-increment ID |
+| payer_name | TEXT UNIQUE | Insurance company name |
+| policy_text | TEXT | Full policy document text |
+| coverage_rules | TEXT | JSON object: procedure → criteria, required docs, decision rules |
+| created_at | DATETIME | Timestamp |
+
+### Table: prior_auth_cases
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | INTEGER PK | Auto-increment ID |
+| patient_id | INTEGER FK | References patients(id) |
+| payer_id | INTEGER FK | References policies(id) |
+| agent_outcome | TEXT | approved, denied, or missing_info |
+| drafted_letter | TEXT | Generated PA letter (if approved) |
+| missing_documentation | TEXT | JSON array of missing criteria |
+| agent_trace | TEXT | JSON array of tool call steps |
+| human_review_status | TEXT | pending, approved, rejected |
+| human_notes | TEXT | Reviewer notes |
+| created_at | DATETIME | Timestamp |
+
+### Table: eval_results
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | INTEGER PK | Auto-increment ID |
+| case_id | INTEGER FK | References prior_auth_cases(id) |
+| expected_outcome | TEXT | Ground truth label |
+| actual_outcome | TEXT | Agent's decision |
+| is_correct | INTEGER | 0 or 1 |
+| created_at | DATETIME | Timestamp |
 
 ---
 
-## Questions?
+## API Reference
 
-If you have questions about how to use this tool or want to report an issue with the AI's decisions, contact your system administrator.
+All endpoints are prefixed with `/api`.
+
+### GET /api/patients
+
+Returns all patient cases with their latest analysis status.
+
+**Response**: Array of patient objects, each with `id`, `name`, `age`, `diagnosis`, `requested_procedure`, `clinical_notes`, `latest_outcome`, `review_status`, `latest_case_id`.
+
+### GET /api/policies
+
+Returns all payer policies.
+
+**Response**: Array of policy objects, each with `id`, `payer_name`, `policy_text`, `coverage_rules`.
+
+### POST /api/analyze-case
+
+Runs the AI agent on a patient case.
+
+**Request body**:
+```json
+{ "patient_id": 1, "payer_id": 1 }
+```
+
+**Response**:
+```json
+{
+  "case_id": 101,
+  "outcome": "approved",
+  "drafted_letter": "string or null",
+  "missing_documentation": ["criterion_1"],
+  "agent_trace": [{ "step": 1, "tool": "lookup_policy", "input": {}, "output": {} }],
+  "reasoning": "Step-by-step explanation"
+}
+```
+
+### POST /api/submit-review
+
+Records a human reviewer's decision.
+
+**Request body**:
+```json
+{ "case_id": 101, "review_status": "approved", "human_notes": "optional" }
+```
+
+**Response**: `{ "success": true, "message": "Review recorded" }`
+
+### GET /api/eval-results
+
+Returns evaluation harness results.
+
+**Response**:
+```json
+{
+  "total_cases": 15, "correct": 14, "accuracy": 0.93,
+  "failures": [{ "case_id": 5, "expected": "approved", "actual": "missing_info" }],
+  "breakdown": [{ "case_id": 1, "expected": "approved", "actual": "approved", "correct": true }]
+}
+```
+
+---
+
+## Agent Design
+
+### Tool Definitions
+
+The agent has three tools, defined in OpenAI-compatible function calling format:
+
+#### 1. lookup_policy
+Retrieves coverage rules for a procedure from the payer's policy.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| procedure | string | Yes | e.g. "MRI lumbar spine" |
+
+#### 2. check_documentation
+Checks which required documentation criteria are met in clinical notes.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| clinical_notes | string | Yes | Patient clinical notes |
+| required_criteria | string[] | Yes | List of criteria from policy |
+
+#### 3. draft_request
+Generates a formatted prior authorization request letter.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| patient_name | string | Yes | Patient name |
+| diagnosis | string | Yes | Diagnosis |
+| procedure | string | Yes | Requested procedure |
+| clinical_justification | string | Yes | Clinical justification text |
+| payer_name | string | Yes | Insurance company name |
+
+### Agent Loop
+
+```
+1. System prompt establishes role
+2. User message provides patient case + payer info
+3. Loop (max 10 iterations):
+   a. Send messages + tools to LLM provider
+   b. If LLM returns tool_calls:
+      - Execute each tool locally
+      - Record in agent_trace
+      - Add tool results to message history
+      - Continue loop
+   c. If LLM returns content (no tool calls):
+      - Extract structured JSON from response
+      - Return {outcome, reasoning, missing_documentation, drafted_letter, agent_trace}
+4. Fallback: If LLM unavailable, run local deterministic analysis
+```
+
+### Local Fallback
+
+When no API key is configured or the LLM call fails, the agent uses a deterministic keyword-based document checker. It achieved **93% accuracy (14/15)** on the test dataset. The local fallback uses domain-specific medical-term matching with overrides for conditional requirements, safety assessments, and meta-documentation criteria.
+
+---
+
+## LLM Provider Abstraction Layer
+
+File: `backend/llm-provider.js`
+
+### Supported Providers
+
+| Provider | LLM_PROVIDER value | Model used | API format | Tool-calling support |
+|----------|-------------------|------------|------------|---------------------|
+| DeepSeek | deepseek | deepseek-chat | OpenAI-compatible | Native |
+| OpenAI | openai | gpt-4o | OpenAI (native) | Native |
+| Groq | groq | llama-3.1-70b-versatile | OpenAI-compatible | Native |
+| Anthropic Claude | claude | claude-3-5-sonnet-20241022 | Anthropic (custom) | Converted |
+
+### How it works
+
+`createProvider()` reads `LLM_PROVIDER` from the environment and returns a normalized provider object. All providers expose the same interface:
+
+```javascript
+const provider = createProvider();
+const response = await provider.chatCompletion(messages, tools, options);
+// response.message = { role, content, tool_calls: [...] }
+```
+
+#### OpenAI-compatible providers (DeepSeek, OpenAI, Groq)
+These use the standard `/chat/completions` endpoint with `Authorization: Bearer` headers. Tool definitions and responses follow the OpenAI format natively.
+
+#### Anthropic Claude
+Claude uses a fundamentally different API:
+- **System prompt**: Goes in a top-level `system` parameter, not in the messages array
+- **Tool format**: `{name, description, input_schema}` instead of `{type: "function", function: {name, description, parameters}}`
+- **Tool responses**: Returned as `content[]` blocks with `type: "tool_use"` instead of a `tool_calls[]` array
+- **Auth**: Uses `x-api-key` header (not `Authorization: Bearer`)
+- **Version header**: Requires `anthropic-version: 2023-06-01`
+
+The abstraction layer handles all of these conversions transparently:
+- Strips system messages from the messages array and moves them to the `system` parameter
+- Converts OpenAI-format tools to Anthropic's `input_schema` format
+- Converts Anthropic's `tool_use` content blocks back to OpenAI-compatible `tool_calls`
+- Routes tool result messages (`role: "tool"`) to Anthropic's `tool_result` user content blocks
+
+### Adding a new provider
+
+1. Add an entry to the `PROVIDERS` object in `llm-provider.js`:
+```javascript
+newprovider: {
+  name: 'NewProvider',
+  model: 'model-name',
+  baseURL: 'https://api.newprovider.com/v1',
+  apiKeyEnv: 'NEWPROVIDER_API_KEY',
+  authHeader: (key) => `Bearer ${key}`,
+  format: 'openai',  // or 'anthropic' if custom format needed
+  defaultTemperature: 0.3,
+  defaultMaxTokens: 2000
+}
+```
+2. If the API format is OpenAI-compatible, no further code changes are needed.
+3. If the format is custom, add a handler function following the Anthropic pattern — convert messages/tools to the provider's format, call their API, then convert the response back.
+4. Add the provider name to the `.env` template and documentation.
+
+---
+
+## Deployment Configuration
+
+### Vercel (vercel.json)
+
+```json
+{
+  "buildCommand": "cd frontend && npm install && npm run build && cd ../backend && npm install",
+  "outputDirectory": "frontend/build",
+  "functions": { "api/**/*.js": { "memory": 512, "maxDuration": 30 } },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/(.*)", "destination": "/frontend/build/$1" },
+    { "source": "/", "destination": "/frontend/build/index.html" }
+  ]
+}
+```
+
+**Important caveat**: Vercel serverless functions are stateless. SQLite reads from the deployed `.db` file work, but writes (analyze-case results, review submissions) do not persist across invocations. For production, migrate to Vercel Postgres or deploy as a long-running server on Railway/Render.
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| LLM_PROVIDER | Yes | deepseek, openai, claude, or groq |
+| DEEPSEEK_API_KEY | If provider=deepseek | DeepSeek API key |
+| OPENAI_API_KEY | If provider=openai | OpenAI API key |
+| ANTHROPIC_API_KEY | If provider=claude | Anthropic API key |
+| GROQ_API_KEY | If provider=groq | Groq API key |
+| DATABASE_PATH | No | Custom SQLite path (default: ../prior_auth.db) |
+
+### Express Server (local dev)
+
+`backend/server.js` mounts all five API handlers and serves the React build in production mode. Run with `node server.js` on port 3001.
