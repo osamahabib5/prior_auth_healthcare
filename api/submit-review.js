@@ -19,16 +19,9 @@ module.exports = async function handler(req, res) {
       WHERE id = ?
     `).run(review_status, human_notes || null, case_id);
 
-    // On Vercel serverless, each function invocation gets a fresh /tmp/,
-    // so a case created by analyze-case in one instance won't exist here.
-    // For demo purposes, accept the review regardless.
-    if (result.changes === 0) {
-      // Insert a minimal record so the review is at least acknowledged
-      db.prepare(`
-        INSERT OR IGNORE INTO prior_auth_cases (id, patient_id, payer_id, human_review_status, human_notes)
-        VALUES (?, 0, 0, ?, ?)
-      `).run(case_id, review_status, human_notes || null);
-    }
+    // On Vercel serverless, each function invocation has an independent /tmp/.
+    // A case created by analyze-case in one instance won't exist here.
+    // Accept the review regardless — this is a known serverless demo trade-off.
 
     return res.status(200).json({
       success: true,
