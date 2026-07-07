@@ -20,8 +20,5 @@
       "source": "/",
       "destination": "/frontend/build/index.html"
     }
-  ],
-  "env": {
-    "DEEPSEEK_API_KEY": "@deepseek_api_key"
-  }
+  ]
 }
