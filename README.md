@@ -72,6 +72,7 @@ The **Eval Results** page shows how well the AI is performing. Fifteen test case
 ### What you need
 
 - **Node.js** version 18 or later ([nodejs.org](https://nodejs.org))
+- A free **[Supabase](https://supabase.com)** account (for the database)
 - **An API key** for one of the supported AI providers (see below)
 
 ### Supported AI providers
@@ -104,7 +105,7 @@ If you do not set an API key, the app will still work — it uses the built-in k
 
 ### Setup steps
 
-```
+```bash
 # 1. Get the code
 git clone <your-repo-url>
 cd prior-auth-assistant
@@ -114,21 +115,27 @@ cd backend && npm install
 cd ../frontend && npm install
 cd ..
 
-# 3. Configure your AI provider
-#    Edit the .env file in the project root:
-#    - Set LLM_PROVIDER to your chosen provider
-#    - Paste your API key for that provider
+# 3. Set up Supabase (free tier)
+#    - Create a project at https://supabase.com
+#    - Go to SQL Editor → paste supabase-migration.sql → Run
+#    - Go to Settings → Database → Connection String → Transaction pooler
+#    - Copy the pooler URL
 
-# 4. Seed the database
+# 4. Configure .env
+#    - Set LLM_PROVIDER to your chosen AI provider
+#    - Paste your API key for that provider
+#    - Set DATABASE_URL to your Supabase pooler URL
+
+# 5. (Optional) Seed the database from your machine
 cd backend && node seed.js
 
-# 5. Start the backend server
+# 6. Start the backend server
 node server.js
-# -> Runs at http://localhost:3001
+# → API running at http://localhost:3001
 
-# 6. In another terminal, start the frontend
+# 7. In another terminal, start the frontend
 cd frontend && npm start
-# -> Opens at http://localhost:3000
+# → App opens at http://localhost:3000
 ```
 
 ---
@@ -151,7 +158,9 @@ cd frontend && npm start
 
 ## The test data
 
-This demo includes **15 synthetic (fake) patient cases** covering MRI scans, diabetes monitors, sleep apnea devices, surgeries, and medications. All cases are evaluated against a single **BlueCross Insurance** payer policy. No real patient data is ever used.
+This demo includes **15 synthetic (fake) patient cases** covering MRI scans, diabetes monitors, sleep apnea devices, surgeries, and medications. All cases are evaluated against a single **BlueCross Insurance** payer policy. Data is stored in a Supabase Postgres database — no real patient data is ever used.
+
+All environments (local dev + Vercel production) share the same Supabase database, so cases analyzed locally appear on the live site and vice versa.
 
 ---
 

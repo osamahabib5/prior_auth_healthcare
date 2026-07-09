@@ -8,13 +8,13 @@ This document covers the technical architecture, database schema, API specificat
 
 ```
 Frontend (React 18)  →  Backend (Express API)  →  LLM Provider (DeepSeek/OpenAI/Claude/Groq)
-                                               →  Database (SQLite local / Postgres on Vercel)
+                                               →  Postgres (Supabase)
 ```
 
 - **Frontend**: React 18 single-page application with React Router
 - **Backend**: Node.js Express server; also deployable as Vercel serverless functions via `api/`
 - **LLM**: Multi-provider abstraction layer (`llm-provider.js`) supporting DeepSeek, OpenAI, Anthropic Claude, and Groq. If no API key is configured, falls back to a local deterministic keyword-based agent.
-- **Database**: Dual-backend unified layer (`db.js`) — auto-detects Postgres (Supabase/Vercel Postgres) via `DATABASE_URL` env var, otherwise uses SQLite via `better-sqlite3`.
+- **Database**: PostgreSQL via Supabase (free tier). Uses `pg` (node-postgres) with connection pooling. Same database instance for local development and Vercel production — writes persist across all environments.
 
 ---
 
@@ -35,9 +35,9 @@ prior-auth-assistant/
 │   │   ├── analyze-case.js
 │   │   ├── submit-review.js
 │   │   └── eval-results.js
-│   ├── db.js                     # Unified DB layer (SQLite + Postgres)
-│   ├── seed.js                   # 15 synthetic patients + 1 payer policy (local)
-│   ├── seed-data.js              # Seed data exported for Vercel auto-seeding
+│   ├── db.js                     # Postgres database layer (pg pool)
+│   ├── seed.js                   # 15 synthetic patients + 1 payer policy (local seeding)
+│   ├── seed-data.js              # Seed data for auto-seeding
 │   ├── deepseek-agent.js         # Agent loop + 3 tools + local fallback
 │   ├── llm-provider.js           # Multi-LLM abstraction (DeepSeek/OpenAI/Claude/Groq)
 │   ├── server.js                 # Express dev server (port 3001)
@@ -288,18 +288,13 @@ The fallback runs automatically and silently. To verify which mode is active, ch
 
 ### Database Layer (`db.js`)
 
-The unified database layer auto-detects the backend:
+The database layer connects to Postgres via the `pg` (node-postgres) library with connection pooling:
 
-| Condition | Backend | Database location |
-|-----------|---------|-------------------|
-| `DATABASE_URL` is set | PostgreSQL (`pg` pool) | Remote (Supabase / Vercel Postgres) |
-| `DATABASE_URL` is empty | SQLite (`better-sqlite3`) | Local file or `/tmp/` on Vercel |
-
-All queries use the same async interface (`db.all()`, `db.get()`, `db.run()`, `db.exec()`) regardless of backend. The layer:
-- Converts SQLite `?` placeholders to Postgres `$1, $2, …` automatically
-- Appends `RETURNING id` to INSERT statements on Postgres to return the new row ID
+- Uses `DATABASE_URL` from the environment (required)
+- Converts SQLite-style `?` placeholders to Postgres `$1, $2, …` automatically
+- Appends `RETURNING id` to INSERT statements to return the new row ID
 - Auto-seeds the database on first access if empty via `ensureSeeded()`
-- On Vercel without `DATABASE_URL`, creates the DB in `/tmp/` and seeds it from `seed-data.js`
+- Connection pool: max 5 connections, SSL with `rejectUnauthorized: false` for Supabase
 
 ---
 
@@ -328,9 +323,9 @@ For persistent storage on Vercel, connect a Postgres database:
 2. Run `supabase-migration.sql` in Supabase SQL Editor to create tables and seed data
 3. Copy the **Transaction pooler** connection string (with `pooler.supabase.com` in the hostname)
 4. Set it as a Vercel environment variable: `DATABASE_URL = postgresql://...`
-5. Redeploy — the app auto-detects Postgres and skips local SQLite
+5. Redeploy — the app connects to the same Supabase instance in all environments.
 
-**Why the pooler URL?** Vercel serverless functions use short-lived connections. Supabase's direct connection (`db.xxx.supabase.co:5432`) fails with DNS errors on Vercel. The transaction pooler (`pooler.supabase.com:6543`) is designed for serverless environments.
+**Why the pooler URL?** Vercel serverless functions use short-lived connections. Supabase's direct connection (`db.xxx.supabase.co:5432`) fails with DNS errors on Vercel. The transaction pooler (`pooler.supabase.com:6543`) is designed for serverless environments. The local Express server also uses the pooler URL for consistency.
 
 ### Environment Variables
 
@@ -341,8 +336,11 @@ For persistent storage on Vercel, connect a Postgres database:
 | OPENAI_API_KEY | If provider=openai | OpenAI API key |
 | ANTHROPIC_API_KEY | If provider=claude | Anthropic API key |
 | GROQ_API_KEY | If provider=groq | Groq API key |
-| DATABASE_URL | No | Postgres connection string (e.g. Supabase pooler URL). If empty, uses SQLite. |
-| DATABASE_PATH | No | Custom SQLite path (default: ../prior_auth.db). Ignored if DATABASE_URL is set. |
+| DATABASE_URL | Yes | Supabase Transaction pooler connection string (required) |
+
+### Express Server (local dev)
+
+`backend/server.js` mounts all five API handlers and serves the React build in production mode. Run with `node server.js` on port 3001. Requires `DATABASE_URL` set in `.env` pointing to your Supabase instance — same database as Vercel production.
 
 ### Adding a new LLM provider
 
@@ -365,4 +363,4 @@ newprovider: {
 
 ### Express Server (local dev)
 
-`backend/server.js` mounts all five API handlers and serves the React build in production mode. Run with `node server.js` on port 3001. The local dev server always uses SQLite unless `DATABASE_URL` is explicitly set in `.env`.
+`backend/server.js` mounts all five API handlers and serves the React build in production mode. Run with `node server.js` on port 3001. Requires `DATABASE_URL` set in `.env` pointing to your Supabase instance — same database as Vercel production.
