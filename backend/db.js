@@ -46,7 +46,11 @@ async function pgGet(sql, params = []) {
 
 async function pgRun(sql, params = []) {
   const pool = getPgPool();
-  const { query, mappedParams } = convertPlaceholders(sql, params);
+  let { query, mappedParams } = convertPlaceholders(sql, params);
+  // Postgres INSERT doesn't return the row by default — add RETURNING id
+  if (/^\s*INSERT\s/i.test(query) && !/RETURNING/i.test(query)) {
+    query = query.replace(/;?\s*$/, ' RETURNING id');
+  }
   const result = await pool.query(query, mappedParams);
   return {
     changes: result.rowCount || 0,

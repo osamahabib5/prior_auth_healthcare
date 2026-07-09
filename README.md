@@ -85,7 +85,22 @@ This application works with four different AI providers. You only need an API ke
 | Anthropic Claude | claude | ANTHROPIC_API_KEY | console.anthropic.com |
 | Groq | groq | GROQ_API_KEY | console.groq.com |
 
-If you do not set an API key, the app will still work — it uses a built-in local analyzer.
+### ⚠️ Two operating modes
+
+This app has two modes, and which one runs depends entirely on whether you configure an LLM API key:
+
+| Mode | When it runs | What it actually does | Accuracy |
+|------|-------------|----------------------|----------|
+| **LLM agent** | API key is set in `.env` (or Vercel env vars) | Sends the case to the AI provider (DeepSeek, GPT-4o, Claude, or Groq), which reads the clinical notes and reasons about whether each policy criterion is met. The LLM calls the three tools (`lookup_policy`, `check_documentation`, `draft_request`) and produces a decision based on actual language understanding. | Not yet formally measured (expected ≥80%) |
+| **Local fallback** | No API key is configured | Runs a deterministic keyword-matching algorithm built into the backend. It looks for specific words and phrases in the clinical notes (e.g. "physical therapy", "conservative treatment", "imaging needed") and checks them against the policy criteria mechanically. **No AI model is involved.** | 93% (14/15 correct on test data) |
+
+**Important**: If your Vercel deployment doesn't have `LLM_PROVIDER` and the corresponding API key set as environment variables, anyone clicking "Run Analysis" on your demo link is seeing the keyword matcher — not an LLM agent — even though the UI still calls it "AI-powered." The local fallback is surprisingly accurate on this dataset but cannot handle novel cases, unusual phrasing, or edge-case clinical reasoning the way an actual LLM can.
+
+To confirm which mode is active, check the Vercel function logs after running an analysis:
+- **LLM mode**: you'll see `[llm-provider]` messages and no fallback trace
+- **Fallback mode**: you'll see an error like `Authentication Fails…` followed by the keyword-matching trace
+
+If you do not set an API key, the app will still work — it uses the built-in keyword-based fallback described above.
 
 ### Setup steps
 

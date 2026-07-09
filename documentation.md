@@ -7,14 +7,14 @@ This document covers the technical architecture, database schema, API specificat
 ## Architecture
 
 ```
-Frontend (React 18)  →  Backend (Express API)  →  LLM Provider
-                                               →  SQLite Database
+Frontend (React 18)  →  Backend (Express API)  →  LLM Provider (DeepSeek/OpenAI/Claude/Groq)
+                                               →  Database (SQLite local / Postgres on Vercel)
 ```
 
 - **Frontend**: React 18 single-page application with React Router
 - **Backend**: Node.js Express server; also deployable as Vercel serverless functions via `api/`
-- **LLM**: Multi-provider abstraction layer supporting DeepSeek, OpenAI, Anthropic Claude, and Groq
-- **Database**: SQLite via `better-sqlite3` (single file, zero-config)
+- **LLM**: Multi-provider abstraction layer (`llm-provider.js`) supporting DeepSeek, OpenAI, Anthropic Claude, and Groq. If no API key is configured, falls back to a local deterministic keyword-based agent.
+- **Database**: Dual-backend unified layer (`db.js`) — auto-detects Postgres (Supabase/Vercel Postgres) via `DATABASE_URL` env var, otherwise uses SQLite via `better-sqlite3`.
 
 ---
 
@@ -35,10 +35,11 @@ prior-auth-assistant/
 │   │   ├── analyze-case.js
 │   │   ├── submit-review.js
 │   │   └── eval-results.js
-│   ├── db.js                     # SQLite connection + schema initialization
-│   ├── seed.js                   # 15 synthetic patients + 1 payer policy
+│   ├── db.js                     # Unified DB layer (SQLite + Postgres)
+│   ├── seed.js                   # 15 synthetic patients + 1 payer policy (local)
+│   ├── seed-data.js              # Seed data exported for Vercel auto-seeding
 │   ├── deepseek-agent.js         # Agent loop + 3 tools + local fallback
-│   ├── llm-provider.js           # Multi-LLM abstraction layer
+│   ├── llm-provider.js           # Multi-LLM abstraction (DeepSeek/OpenAI/Claude/Groq)
 │   ├── server.js                 # Express dev server (port 3001)
 │   └── package.json
 ├── frontend/
@@ -54,7 +55,7 @@ prior-auth-assistant/
 │   └── package.json
 ├── .env                          # LLM_PROVIDER + API keys (not committed)
 ├── vercel.json                   # Vercel deployment config
-├── prior_auth.db                 # SQLite database (committed, read-only on Vercel)
+├── supabase-migration.sql        # Supabase schema + seed data SQL
 ├── README.md                     # End-user documentation
 └── documentation.md              # This file
 ```
@@ -272,24 +273,33 @@ The abstraction layer handles all of these conversions transparently:
 - Converts Anthropic's `tool_use` content blocks back to OpenAI-compatible `tool_calls`
 - Routes tool result messages (`role: "tool"`) to Anthropic's `tool_result` user content blocks
 
-### Adding a new provider
+### Local Fallback Agent
 
-1. Add an entry to the `PROVIDERS` object in `llm-provider.js`:
-```javascript
-newprovider: {
-  name: 'NewProvider',
-  model: 'model-name',
-  baseURL: 'https://api.newprovider.com/v1',
-  apiKeyEnv: 'NEWPROVIDER_API_KEY',
-  authHeader: (key) => `Bearer ${key}`,
-  format: 'openai',  // or 'anthropic' if custom format needed
-  defaultTemperature: 0.3,
-  defaultMaxTokens: 2000
-}
-```
-2. If the API format is OpenAI-compatible, no further code changes are needed.
-3. If the format is custom, add a handler function following the Anthropic pattern — convert messages/tools to the provider's format, call their API, then convert the response back.
-4. Add the provider name to the `.env` template and documentation.
+When no LLM API key is configured, the agent falls back to a **deterministic keyword-based document checker** built into `deepseek-agent.js`. This fallback:
+
+- Matches specific medical terms and phrases against policy criteria using substring/keyword search
+- Includes domain-specific overrides for common medical prior authorization patterns (conditional requirements, safety assessments, clinical justification phrasing)
+- Achieved **93% accuracy (14/15 correct)** on the 15-case test dataset
+- Cannot handle novel phrasing, edge cases, or nuanced clinical reasoning — it's a mechanical matcher, not an AI
+
+The fallback runs automatically and silently. To verify which mode is active, check the Vercel function logs:
+- LLM mode: normal tool-call trace with provider name
+- Fallback mode: `Authentication Fails…` error followed by keyword-matching trace steps
+
+### Database Layer (`db.js`)
+
+The unified database layer auto-detects the backend:
+
+| Condition | Backend | Database location |
+|-----------|---------|-------------------|
+| `DATABASE_URL` is set | PostgreSQL (`pg` pool) | Remote (Supabase / Vercel Postgres) |
+| `DATABASE_URL` is empty | SQLite (`better-sqlite3`) | Local file or `/tmp/` on Vercel |
+
+All queries use the same async interface (`db.all()`, `db.get()`, `db.run()`, `db.exec()`) regardless of backend. The layer:
+- Converts SQLite `?` placeholders to Postgres `$1, $2, …` automatically
+- Appends `RETURNING id` to INSERT statements on Postgres to return the new row ID
+- Auto-seeds the database on first access if empty via `ensureSeeded()`
+- On Vercel without `DATABASE_URL`, creates the DB in `/tmp/` and seeds it from `seed-data.js`
 
 ---
 
@@ -310,7 +320,17 @@ newprovider: {
 }
 ```
 
-**Important caveat**: Vercel serverless functions are stateless. SQLite reads from the deployed `.db` file work, but writes (analyze-case results, review submissions) do not persist across invocations. For production, migrate to Vercel Postgres or deploy as a long-running server on Railway/Render.
+### Postgres on Vercel (Supabase)
+
+For persistent storage on Vercel, connect a Postgres database:
+
+1. Create a [Supabase](https://supabase.com) project (free tier)
+2. Run `supabase-migration.sql` in Supabase SQL Editor to create tables and seed data
+3. Copy the **Transaction pooler** connection string (with `pooler.supabase.com` in the hostname)
+4. Set it as a Vercel environment variable: `DATABASE_URL = postgresql://...`
+5. Redeploy — the app auto-detects Postgres and skips local SQLite
+
+**Why the pooler URL?** Vercel serverless functions use short-lived connections. Supabase's direct connection (`db.xxx.supabase.co:5432`) fails with DNS errors on Vercel. The transaction pooler (`pooler.supabase.com:6543`) is designed for serverless environments.
 
 ### Environment Variables
 
@@ -321,8 +341,28 @@ newprovider: {
 | OPENAI_API_KEY | If provider=openai | OpenAI API key |
 | ANTHROPIC_API_KEY | If provider=claude | Anthropic API key |
 | GROQ_API_KEY | If provider=groq | Groq API key |
-| DATABASE_PATH | No | Custom SQLite path (default: ../prior_auth.db) |
+| DATABASE_URL | No | Postgres connection string (e.g. Supabase pooler URL). If empty, uses SQLite. |
+| DATABASE_PATH | No | Custom SQLite path (default: ../prior_auth.db). Ignored if DATABASE_URL is set. |
+
+### Adding a new LLM provider
+
+1. Add an entry to the `PROVIDERS` object in `llm-provider.js`:
+```javascript
+newprovider: {
+  name: 'NewProvider',
+  model: 'model-name',
+  baseURL: 'https://api.newprovider.com/v1',
+  apiKeyEnv: 'NEWPROVIDER_API_KEY',
+  authHeader: (key) => `Bearer ${key}`,
+  format: 'openai',  // or 'anthropic' if custom format needed
+  defaultTemperature: 0.3,
+  defaultMaxTokens: 2000
+}
+```
+2. If the API format is OpenAI-compatible, no further code changes are needed.
+3. If the format is custom, add a handler function following the Anthropic pattern.
+4. Add the provider name to the `.env` template and this documentation.
 
 ### Express Server (local dev)
 
-`backend/server.js` mounts all five API handlers and serves the React build in production mode. Run with `node server.js` on port 3001.
+`backend/server.js` mounts all five API handlers and serves the React build in production mode. Run with `node server.js` on port 3001. The local dev server always uses SQLite unless `DATABASE_URL` is explicitly set in `.env`.

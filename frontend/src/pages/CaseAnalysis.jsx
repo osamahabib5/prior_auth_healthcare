@@ -87,7 +87,14 @@ function CaseAnalysis() {
   };
 
   const handleSubmitReview = async () => {
-    if (!reviewStatus || !result?.case_id) return;
+    if (!reviewStatus) {
+      setReviewMessage({ type: 'error', text: 'Please select Approve or Reject before submitting.' });
+      return;
+    }
+    if (!result?.case_id) {
+      setReviewMessage({ type: 'error', text: 'No case ID found. Please run the analysis first.' });
+      return;
+    }
 
     setReviewSubmitting(true);
     setReviewMessage(null);
