@@ -7,7 +7,8 @@ module.exports = async function handler(req, res) {
 
   try {
     const db = getDb();
-    const policies = db.prepare('SELECT id, payer_name, policy_text, coverage_rules, created_at FROM policies').all();
+    await db.ensureSeeded();
+    const policies = await db.all('SELECT id, payer_name, policy_text, coverage_rules, created_at FROM policies');
     return res.status(200).json(policies);
   } catch (error) {
     console.error('Error fetching policies:', error);

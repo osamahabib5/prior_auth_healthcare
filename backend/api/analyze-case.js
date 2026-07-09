@@ -14,15 +14,16 @@ module.exports = async function handler(req, res) {
     }
 
     const db = getDb();
+    await db.ensureSeeded();
 
     // Fetch patient
-    const patient = db.prepare('SELECT * FROM patients WHERE id = ?').get(patient_id);
+    const patient = await db.get('SELECT * FROM patients WHERE id = ?', [patient_id]);
     if (!patient) {
       return res.status(404).json({ error: `Patient with id ${patient_id} not found` });
     }
 
     // Fetch policy
-    const policy = db.prepare('SELECT * FROM policies WHERE id = ?').get(payer_id);
+    const policy = await db.get('SELECT * FROM policies WHERE id = ?', [payer_id]);
     if (!policy) {
       return res.status(404).json({ error: `Policy with id ${payer_id} not found` });
     }
@@ -31,18 +32,11 @@ module.exports = async function handler(req, res) {
     const result = await runAgent(patient, policy);
 
     // Store the case in the database
-    const insertCase = db.prepare(`
-      INSERT INTO prior_auth_cases (patient_id, payer_id, agent_outcome, drafted_letter, missing_documentation, agent_trace)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-
-    const caseResult = insertCase.run(
-      patient_id,
-      payer_id,
-      result.outcome,
-      result.drafted_letter,
-      JSON.stringify(result.missing_documentation),
-      JSON.stringify(result.agent_trace)
+    const caseResult = await db.run(
+      `INSERT INTO prior_auth_cases (patient_id, payer_id, agent_outcome, drafted_letter, missing_documentation, agent_trace)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [patient_id, payer_id, result.outcome, result.drafted_letter,
+       JSON.stringify(result.missing_documentation), JSON.stringify(result.agent_trace)]
     );
 
     return res.status(200).json({

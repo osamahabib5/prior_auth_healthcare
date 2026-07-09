@@ -18,16 +18,14 @@ module.exports = async function handler(req, res) {
 
     const db = getDb();
 
-    const result = db.prepare(`
-      UPDATE prior_auth_cases
-      SET human_review_status = ?, human_notes = ?
-      WHERE id = ?
-    `).run(review_status, human_notes || null, case_id);
+    await db.run(
+      `UPDATE prior_auth_cases SET human_review_status = ?, human_notes = ? WHERE id = ?`,
+      [review_status, human_notes || null, case_id]
+    );
 
     // On Vercel serverless, a case created by analyze-case in one function
     // instance won't exist in another. Accept the review regardless for demo.
 
-    return res.status(200).json({
     return res.status(200).json({
       success: true,
       message: 'Review recorded',

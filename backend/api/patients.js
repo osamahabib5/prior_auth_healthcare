@@ -7,9 +7,8 @@ module.exports = async function handler(req, res) {
 
   try {
     const db = getDb();
-
-    // Get all patients with their latest case status
-    const patients = db.prepare(`
+    await db.ensureSeeded();
+    const patients = await db.all(`
       SELECT p.*,
         (SELECT pac.agent_outcome FROM prior_auth_cases pac
          WHERE pac.patient_id = p.id ORDER BY pac.created_at DESC LIMIT 1) as latest_outcome,
@@ -17,9 +16,8 @@ module.exports = async function handler(req, res) {
          WHERE pac.patient_id = p.id ORDER BY pac.created_at DESC LIMIT 1) as review_status,
         (SELECT pac.id FROM prior_auth_cases pac
          WHERE pac.patient_id = p.id ORDER BY pac.created_at DESC LIMIT 1) as latest_case_id
-      FROM patients p
-      ORDER BY p.id
-    `).all();
+      FROM patients p ORDER BY p.id
+    `);
 
     return res.status(200).json(patients);
   } catch (error) {

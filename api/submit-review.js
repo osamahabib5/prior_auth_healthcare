@@ -13,11 +13,11 @@ module.exports = async function handler(req, res) {
       return res.status(400).json({ error: 'review_status must be "approved" or "rejected"' });
     }
     const db = getDb();
-    const result = db.prepare(`
-      UPDATE prior_auth_cases
-      SET human_review_status = ?, human_notes = ?
-      WHERE id = ?
-    `).run(review_status, human_notes || null, case_id);
+    await db.ensureSeeded();
+    await db.run(
+      `UPDATE prior_auth_cases SET human_review_status = ?, human_notes = ? WHERE id = ?`,
+      [review_status, human_notes || null, case_id]
+    );
 
     // On Vercel serverless, each function invocation has an independent /tmp/.
     // A case created by analyze-case in one instance won't exist here.

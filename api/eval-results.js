@@ -6,22 +6,23 @@ module.exports = async function handler(req, res) {
   }
   try {
     const db = getDb();
-    const evalRows = db.prepare(`
+    await db.ensureSeeded();
+    const evalRows = await db.all(`
       SELECT er.id, er.case_id, er.expected_outcome, er.actual_outcome, er.is_correct, er.created_at,
         pac.patient_id, p.name as patient_name, p.requested_procedure as procedure
       FROM eval_results er
       JOIN prior_auth_cases pac ON er.case_id = pac.id
       JOIN patients p ON pac.patient_id = p.id
       ORDER BY er.case_id
-    `).all();
+    `);
 
     if (evalRows.length === 0) {
-      const cases = db.prepare(`
+      const cases = await db.all(`
         SELECT pac.id, pac.agent_outcome, pac.patient_id, p.name, p.requested_procedure
         FROM prior_auth_cases pac
         JOIN patients p ON pac.patient_id = p.id
         WHERE pac.agent_outcome IS NOT NULL
-      `).all();
+      `);
       if (cases.length === 0) {
         return res.status(200).json({
           total_cases: 0, correct: 0, accuracy: 0,

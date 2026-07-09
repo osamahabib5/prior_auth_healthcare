@@ -11,25 +11,21 @@ module.exports = async function handler(req, res) {
       return res.status(400).json({ error: 'patient_id and payer_id are required' });
     }
     const db = getDb();
-    const patient = db.prepare('SELECT * FROM patients WHERE id = ?').get(patient_id);
+    await db.ensureSeeded();
+    const patient = await db.get('SELECT * FROM patients WHERE id = ?', [patient_id]);
     if (!patient) {
       return res.status(404).json({ error: `Patient with id ${patient_id} not found` });
     }
-    const policy = db.prepare('SELECT * FROM policies WHERE id = ?').get(payer_id);
+    const policy = await db.get('SELECT * FROM policies WHERE id = ?', [payer_id]);
     if (!policy) {
       return res.status(404).json({ error: `Policy with id ${payer_id} not found` });
     }
     const result = await runAgent(patient, policy);
-    const insertCase = db.prepare(`
-      INSERT INTO prior_auth_cases (patient_id, payer_id, agent_outcome, drafted_letter, missing_documentation, agent_trace)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-    const caseResult = insertCase.run(
-      patient_id, payer_id,
-      result.outcome,
-      result.drafted_letter,
-      JSON.stringify(result.missing_documentation),
-      JSON.stringify(result.agent_trace)
+    const caseResult = await db.run(
+      `INSERT INTO prior_auth_cases (patient_id, payer_id, agent_outcome, drafted_letter, missing_documentation, agent_trace)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [patient_id, payer_id, result.outcome, result.drafted_letter,
+       JSON.stringify(result.missing_documentation), JSON.stringify(result.agent_trace)]
     );
     return res.status(200).json({
       case_id: caseResult.lastInsertRowid,

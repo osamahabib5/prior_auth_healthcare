@@ -9,7 +9,7 @@ module.exports = async function handler(req, res) {
     const db = getDb();
 
     // Get all eval results with case details
-    const evalRows = db.prepare(`
+    const evalRows = await db.all(`
       SELECT
         er.id,
         er.case_id,
@@ -25,16 +25,15 @@ module.exports = async function handler(req, res) {
       JOIN prior_auth_cases pac ON er.case_id = pac.id
       JOIN patients p ON pac.patient_id = p.id
       ORDER BY er.case_id
-    `).all();
+    `);
 
     if (evalRows.length === 0) {
-      // If no eval results exist, generate from existing cases
-      const cases = db.prepare(`
+      const cases = await db.all(`
         SELECT pac.id, pac.agent_outcome, pac.patient_id, p.name, p.requested_procedure
         FROM prior_auth_cases pac
         JOIN patients p ON pac.patient_id = p.id
         WHERE pac.agent_outcome IS NOT NULL
-      `).all();
+      `);
 
       if (cases.length === 0) {
         return res.status(200).json({

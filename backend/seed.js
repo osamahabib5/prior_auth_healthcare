@@ -377,35 +377,30 @@ const expectedOutcomes = [
   { patient_idx: 14, expected: 'approved' }       // Olivia - Laparoscopy: 12mo pain, failed NSAIDs+OCP ✓
 ];
 
-function seed() {
+async function seed() {
   const db = getDb();
   console.log('Seeding database...');
 
   // Clear existing data
-  db.exec('DELETE FROM eval_results');
-  db.exec('DELETE FROM prior_auth_cases');
-  db.exec('DELETE FROM policies');
-  db.exec('DELETE FROM patients');
+  await db.exec('DELETE FROM eval_results');
+  await db.exec('DELETE FROM prior_auth_cases');
+  await db.exec('DELETE FROM policies');
+  await db.exec('DELETE FROM patients');
 
   // Insert policy
-  const insertPolicy = db.prepare(
-    'INSERT INTO policies (payer_name, policy_text, coverage_rules) VALUES (?, ?, ?)'
+  await db.run(
+    'INSERT INTO policies (payer_name, policy_text, coverage_rules) VALUES (?, ?, ?)',
+    [policy.payer_name, policy.policy_text, policy.coverage_rules]
   );
-  insertPolicy.run(policy.payer_name, policy.policy_text, policy.coverage_rules);
   console.log(`  Inserted policy: ${policy.payer_name}`);
 
   // Insert patients
-  const insertPatient = db.prepare(
-    'INSERT INTO patients (name, age, diagnosis, requested_procedure, clinical_notes) VALUES (?, ?, ?, ?, ?)'
-  );
-
-  const insertMany = db.transaction((items) => {
-    for (const p of items) {
-      insertPatient.run(p.name, p.age, p.diagnosis, p.requested_procedure, p.clinical_notes);
-    }
-  });
-
-  insertMany(patients);
+  for (const p of patients) {
+    await db.run(
+      'INSERT INTO patients (name, age, diagnosis, requested_procedure, clinical_notes) VALUES (?, ?, ?, ?, ?)',
+      [p.name, p.age, p.diagnosis, p.requested_procedure, p.clinical_notes]
+    );
+  }
   console.log(`  Inserted ${patients.length} patients`);
 
   console.log('Seed complete!');
@@ -422,7 +417,13 @@ function seed() {
 
 // Run if called directly
 if (require.main === module) {
-  seed();
+  seed().then(() => {
+    console.log('Done.');
+    process.exit(0);
+  }).catch(err => {
+    console.error('Seed failed:', err);
+    process.exit(1);
+  });
 }
 
 module.exports = { patients, policy, expectedOutcomes };
